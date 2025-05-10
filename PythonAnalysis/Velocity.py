@@ -4,7 +4,7 @@ from matplotlib.widgets import SpanSelector
 import numpy as np
 
 # Đọc file CSV
-df = pd.read_csv('logs/position_data_20250427_220904.csv')
+df = pd.read_csv('logs/position_data_20250507_154125.csv')
 
 # Tính tần số thực tế từ timestamp để hiển thị thông tin
 timestamps = df['Timestamp_ms'].unique()  # Lấy các giá trị timestamp duy nhất

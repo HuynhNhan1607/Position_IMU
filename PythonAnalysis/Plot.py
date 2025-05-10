@@ -135,7 +135,7 @@ def plot_sensor_data(df, euler_cols, accel_cols, gyro_cols):
 # Main function
 def main():
     # Tên file dữ liệu
-    file_path = "logs/bno055_data_20250427_220904.csv"
+    file_path = "logs/bno055_data_20250507_154125.csv"
     
     # Đọc dữ liệu
     df = load_data(file_path)
