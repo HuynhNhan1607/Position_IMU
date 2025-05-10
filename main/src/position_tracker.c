@@ -210,10 +210,15 @@ void position_tracker_add_accel()
             xSemaphoreGive(pos_data.data_mutex);
         }
 
+#if USE_SIMPSON
         // Reset buffer
         simpson_buffer.count = 0;
+#endif
         return;
     }
+
+#if USE_SIMPSON
+    // Simpson's rule integration (collect 4 samples, then calculate)
 
     // Add to buffer
     if (simpson_buffer.count < 4)
@@ -259,6 +264,49 @@ void position_tracker_add_accel()
         simpson_buffer.accel_buffer[0] = accel;
         simpson_buffer.time_buffer[0] = current_time;
     }
+#else
+    // Standard integration (simple a * dt)
+
+    // We're processing at 100Hz, so dt = 0.01s
+    const float dt = 0.01f;
+
+    // Calculate integration
+    float delta_velocity[2];
+    delta_velocity[0] = accel.x * dt;
+    delta_velocity[1] = accel.y * dt;
+
+    static int64_t last_integration_time = 0;
+    float time_delta = 0.0f;
+
+    if (last_integration_time > 0)
+    {
+        time_delta = (current_time - last_integration_time) / 1000000.0f;
+    }
+    last_integration_time = current_time;
+
+    // Skip erroneous time periods
+    if (time_delta <= 0.0f || time_delta > 0.05f)
+    {
+        time_delta = dt; // Default to expected time difference
+    }
+
+    if (xSemaphoreTake(pos_data.data_mutex, pdMS_TO_TICKS(2)) == pdTRUE)
+    {
+        // Update velocity with direct integration
+        pos_data.velocity[0] += delta_velocity[0];
+        pos_data.velocity[1] += delta_velocity[1];
+
+        // Calculate position change using current velocity
+        float delta_pos_x = pos_data.velocity[0] * time_delta;
+        float delta_pos_y = pos_data.velocity[1] * time_delta;
+
+        // Update position
+        pos_data.position[0] += delta_pos_x;
+        pos_data.position[1] += delta_pos_y;
+
+        xSemaphoreGive(pos_data.data_mutex);
+    }
+#endif
 }
 
 // Position tracking task (runs at 100Hz)
@@ -299,7 +347,10 @@ void position_tracker_task(void *pvParameters)
                      "}"
                      "}\n",
                      ID_ROBOT, pos[0], pos[1], vel[0], vel[1]);
+#if SEND_UART == 1
+#else
             printf("%s", json_buffer);
+#endif
         }
 
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(UPDATE_RATE_MS));

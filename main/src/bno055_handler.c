@@ -9,18 +9,18 @@
 #include "LPF.h"
 #include "nvs_handler.h"
 #include "sys_config.h"
-
 #include "string.h"
-
+#include "uart_handler.h"
 #include <math.h>
 
 #define BNO_MODE OPERATION_MODE_IMUPLUS
 
 #define BNO055_CALIBRATED_BIT BIT0
-#define SEND_ALL 1 // 1: send all data, 0: send only lin_accel
 
 #define MOTION_THRESHOLD 4.5f  // Ngưỡng phát hiện chuyển động từ gyro
 #define MOTION_HYSTERESIS 0.3f // Độ trễ để tránh chuyển trạng thái liên tục
+
+#define ACCEL_THRESHOLD 0.02f
 
 static const char *TAG_IMU = "BNO055_Handler";
 
@@ -366,11 +366,12 @@ float apply_heading_offset(float raw_heading)
     return adjusted;
 }
 
+#define SCALE_ACCEL_OFFSET 0.2f
 static void apply_accel_offset(bno055_vec3_t *vec)
 {
-    vec->x -= accel_offset.x;
-    vec->y -= accel_offset.y;
-    vec->z -= accel_offset.z;
+    vec->x = vec->x - (SCALE_ACCEL_OFFSET * accel_offset.x);
+    vec->y = vec->y - (SCALE_ACCEL_OFFSET * accel_offset.y);
+    vec->z = vec->z - (SCALE_ACCEL_OFFSET * accel_offset.z);
 }
 
 void reinit_sensor(void *pvParameters)
@@ -702,7 +703,8 @@ void ndof_task(void *pvParameters)
     float local_adjusted_heading = 0.0f;
     bool is_moving = false;
 
-    char json_buffer[512];
+    char json_buffer[255];
+    int cycle_counter = 0;
 
     if (bno055_event_group != NULL)
     {
@@ -750,7 +752,7 @@ void ndof_task(void *pvParameters)
         // Áp dụng offset vào biến cục bộ
         apply_accel_offset(&local_lin_accel);
 
-        apply_accel_threshold(&local_lin_accel, 0.1f); // Tính toán adjusted heading
+        apply_accel_threshold(&local_lin_accel, ACCEL_THRESHOLD); // Tính toán adjusted heading
 
         local_adjusted_heading = apply_heading_offset(local_euler.heading);
 
@@ -786,23 +788,23 @@ void ndof_task(void *pvParameters)
 
         // Tạo JSON và gửi dữ liệu - sử dụng biến cục bộ để tránh khóa mutex thêm lần nữa
 #if SEND_ALL == 1
-        snprintf(json_buffer, sizeof(json_buffer),
-                 "{"
-                 "\"id\":\"%s\","
-                 "\"type\":\"bno055\","
-                 "\"data\":{"
-                 "\"time\":%10d,"
-                 "\"euler\":[%.4f,%.4f,%.4f],"
-                 "\"lin_accel\":[%.4f,%.4f,%.4f],"
-                 "\"gyro_raw\":[%.4f,%.4f,%.4f],"
-                 "\"status\":\"%s\""
-                 "}"
-                 "}\n",
-                 ID_ROBOT, time_bno,
-                 local_euler.heading, local_euler.pitch, local_euler.roll,
-                 local_lin_accel.x, local_lin_accel.y, local_lin_accel.z,
-                 local_gyro_raw.x, local_gyro_raw.y, local_gyro_raw.z,
-                 is_moving ? "moving" : "stationary");
+        int bytes_written = snprintf(json_buffer, sizeof(json_buffer),
+                                     "{"
+                                     "\"id\":\"%s\","
+                                     "\"type\":\"bno055\","
+                                     "\"data\":{"
+                                     "\"time\":%10d,"
+                                     "\"euler\":[%.4f,%.4f,%.4f],"
+                                     "\"lin_accel\":[%.4f,%.4f,%.4f],"
+                                     "\"gyro_raw\":[%.4f,%.4f,%.4f],"
+                                     "\"status\":\"%s\""
+                                     "}"
+                                     "}\n",
+                                     ID_ROBOT, time_bno,
+                                     local_adjusted_heading, local_euler.pitch, local_euler.roll,
+                                     local_lin_accel.x, local_lin_accel.y, local_lin_accel.z,
+                                     local_gyro_raw.x, local_gyro_raw.y, local_gyro_raw.z,
+                                     is_moving ? "moving" : "stationary");
 #else
         snprintf(json_buffer, sizeof(json_buffer),
                  "{"
@@ -820,8 +822,18 @@ void ndof_task(void *pvParameters)
                  local_gyro_raw.x, local_gyro_raw.y, local_gyro_raw.z,
                  is_moving ? "true" : "false");
 #endif
-        // Thay thế gửi qua socket bằng in ra màn hình
+
+#if SEND_UART == 1
+        cycle_counter++;
+        if (cycle_counter % 10 == 0)
+        {
+            uart2_send_data(json_buffer, bytes_written);
+            cycle_counter = 0;
+        }
+#else
         printf("%s", json_buffer);
+
+#endif
 
         vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(BNO_POLLING_MS));
     }

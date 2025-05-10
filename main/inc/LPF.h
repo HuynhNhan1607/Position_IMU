@@ -7,12 +7,22 @@
 
 // Default filter coefficient
 #define LPF_DEFAULT_ALPHA 0.2f
-
 typedef struct
 {
-    float alpha;      // Filter coefficient (0.0-1.0), lower = more filtering
-    bool initialized; // Flag indicating if the filter has been initialized
-    void *prev_value; // Previous filtered value
+    // Hệ số bộ lọc IIR bậc 2
+    ;
+    double a1; // Hệ số cho y[n-1]
+    double a2; // Hệ số cho y[n-2]
+    double b0; // Hệ số cho x[n]
+    double b1; // Hệ số cho x[n-1]
+    double b2; // Hệ số cho x[n-2]
+
+    bool initialized; // Cờ báo hiệu bộ lọc đã được khởi tạo chưa
+
+    // Chỉ lưu trữ cho dữ liệu vec3
+    bno055_vec3_t prev_inputs[2];  // Giá trị đầu vào trước đó: x[n-1], x[n-2]
+    bno055_vec3_t prev_outputs[2]; // Giá trị đầu ra trước đó: y[n-1], y[n-2]
+
 } lpf_filter_t;
 
 bool lpf_init(lpf_filter_t *filter, float alpha, size_t prev_value_size);

@@ -4,14 +4,20 @@
 #include "esp_log.h"
 #include "sys_config.h"
 #include "position_tracker.h"
-
 #include "bno055_handler.h"
-
+#include "uart_handler.h"
 extern EventGroupHandle_t bno055_event_group;
 
 void app_main(void)
 {
-    // vTaskDelay(pdMS_TO_TICKS(100));
+
+    if (uart2_init() != ESP_OK)
+    {
+        ESP_LOGE("UART_MAIN", "uart2_init() failed");
+        return;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(100));
 
     bno055_start();
 
